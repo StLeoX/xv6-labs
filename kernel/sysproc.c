@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -98,8 +99,27 @@ sys_uptime(void)
 
 //
 uint64
-sys_trace(void) {
+sys_trace(void)
+{
     int mask;
     if (argint(0, &mask) < 0) return -1;
     myproc()->mask = mask; return 0;
+}
+
+//
+uint64
+sys_sysinfo(void)
+{
+  struct sysinfo info;
+  uint64 addr;
+  // fetch address of sysinfo into local var addr.
+  if (argaddr(0, &addr) < 0) return -1;
+  struct proc* p = myproc();
+  // upadte fields
+  info.freemem = get_free_vm();
+  info.nproc = count_unused_proc();
+  info.freefd = count_free_fd();
+  // retrieve info back to user
+  if (copyout(p->pagetable, addr, (char*)&info, sizeof(info)) < 0) return -1;
+  return 0;
 }

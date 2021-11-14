@@ -695,3 +695,40 @@ procdump(void)
     printf("\n");
   }
 }
+
+int
+count_unused_proc(void)
+{
+  // static?? unsafe for-loop??
+  // int i;
+  // int n = 0;
+  // for (i = 0; i < NPROC; i++)
+  // {
+  //   if (proc[i].state != UNUSED) n++;
+  // }
+  // return n;
+
+  // atomic?? safe??
+  struct proc* p;
+  uint64 n=0;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if (p->state != UNUSED) n++;
+    release(&p->lock);
+  }
+  //count idle-proc, so add 1 ?
+  return n;
+}
+
+int
+count_free_fd(void)
+{ 
+  int i,n=0;
+  struct proc* p = myproc();
+  for (i=0; i<NOFILE; i++)
+  {
+    if(p->ofile[i]) n++;
+  }
+  return NOFILE +1 -n;
+}
