@@ -8,6 +8,6 @@ int main(int argc,char* argv[]){
     }
     int ticks = atoi(argv[1]); //将字符串参数转为整数
     sleep(ticks);              //使用系统调用sleep
-    printf("(nothing happens for a little while)\n");
+    printf("have slept %d ticks.\n",ticks);
     exit(0); //确保进程退出
 }
