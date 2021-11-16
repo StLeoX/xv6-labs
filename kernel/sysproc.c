@@ -117,7 +117,7 @@ sys_sysinfo(void)
   struct proc* p = myproc();
   // upadte fields
   info.freemem = get_free_vm();
-  info.nproc = count_unused_proc();
+  info.nproc = count_unused_proc() + 2;
   info.freefd = count_free_fd();
   // retrieve info back to user
   if (copyout(p->pagetable, addr, (char*)&info, sizeof(info)) < 0) return -1;
