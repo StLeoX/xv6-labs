@@ -450,3 +450,36 @@ test_pagetable()
   uint64 gsatp = MAKE_SATP(kernel_pagetable);
   return satp != gsatp;
 }
+
+
+// vm printer
+void vmprint_aux(pagetable_t pagetable, int level)
+{
+  int tab_wide = (level+1)*2;
+  for(int i=0; i<512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V)// check valid
+    {
+      //tab
+      for(int j=0; j<tab_wide; j++)
+      {
+
+        if(j%2==0) printf(" ");
+        printf("|");
+      }
+      printf("%d: pte %p pa %p\n",i, pte, PTE2PA(pte));
+      if(level < 2)//total 3 level
+      {
+        uint64 child = PTE2PA(pte);
+        vmprint_aux((pagetable_t)child, level + 1);
+      }
+    }
+  }
+}
+
+void vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  vmprint_aux(pagetable, 0);
+}
