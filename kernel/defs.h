@@ -180,6 +180,11 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
 void            vmprint(pagetable_t);
+pagetable_t     ukvmcreate(void);
+void            kvmmap_(uint64, uint64, uint64, int, pagetable_t);
+// void            freewalk(pagetable_t);// work bad for ukvm
+pte_t*          walk(pagetable_t, uint64, int);
+void            freewalk_ukvm(pagetable_t, int);
 
 // plic.c
 void            plicinit(void);

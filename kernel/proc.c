@@ -21,6 +21,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+extern pagetable_t kernel_pagetable; // from vm.c
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -41,7 +43,7 @@ procinit(void)
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
   }
-  kvminithart();
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -121,6 +123,24 @@ found:
     return 0;
   }
 
+  // init user's kernel pagetable, and bind p->kstack
+  p->pagetable_k = ukvmcreate();
+  if(p->pagetable_k == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  pte_t* pte = walk(kernel_pagetable, p->kstack, 0);
+  if(pte == 0){
+    panic("allocproc: proc kernel stack no found.");
+  }
+  uint64 pa = PTE2PA(*pte);
+  int perm = PTE_FLAGS(*pte);
+
+  // copy the map of the process's kernel stack into the process's kernel pagetable
+  kvmmap_(p->kstack, pa, PGSIZE, perm, p->pagetable_k);
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -150,6 +170,10 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  if(p->pagetable_k){
+    freewalk_ukvm(p->pagetable_k, 0);
+  }
+  p->pagetable_k = 0;
 }
 
 // Create a user page table for a given process,
@@ -473,11 +497,20 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // hold p->pagetable_k
+        w_satp(MAKE_SATP(p->pagetable_k));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0; // cpu dosen't run any process now
+        
+        // switch pagetable back kernel-pg
+        w_satp(MAKE_SATP(kernel_pagetable));
+        sfence_vma();
 
         found = 1;
       }
@@ -486,6 +519,10 @@ scheduler(void)
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
+      // no found, use kernel_pagetable.
+      w_satp(MAKE_SATP(kernel_pagetable));
+      sfence_vma();
+
       asm volatile("wfi");
     }
 #else

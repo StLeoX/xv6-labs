@@ -56,6 +56,38 @@ kvminithart()
   sfence_vma();
 }
 
+// create a copy of the kernel page when the kvminit is done
+// return the copy's pointer
+pagetable_t
+ukvmcreate(){
+    pagetable_t kp = (pagetable_t) kalloc();
+    memset(kp, 0, PGSIZE);
+
+    // uart registers
+    kvmmap_(UART0, UART0, PGSIZE, PTE_R | PTE_W, kp);
+
+    // virtio mmio disk interface
+    kvmmap_(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W, kp);
+
+    // CLINT
+    // not CLINT to avoid addr-crash
+
+    // PLIC
+    kvmmap_(PLIC, PLIC, 0x400000, PTE_R | PTE_W, kp);
+
+    // map kernel text executable and read-only.
+    kvmmap_(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X, kp);
+
+    // map kernel data and the physical RAM we'll make use of.
+    kvmmap_((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W, kp);
+
+    // map the trampoline for trap entry/exit to
+    // the highest virtual address in the kernel.
+    kvmmap_(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X, kp);
+
+    return kp;
+}
+
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page-table pages.
@@ -119,6 +151,15 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
+}
+
+// add a mapping to the user's copy of the kernel page table.
+// does not flush TLB or enable paging.
+void
+kvmmap_(uint64 va, uint64 pa, uint64 sz, int perm, pagetable_t kp)
+{
+  if(mappages(kp, va, sz, pa, perm) != 0)
+    panic("kvmmap_");
 }
 
 // translate a kernel virtual address to
@@ -288,6 +329,22 @@ freewalk(pagetable_t pagetable)
     }
   }
   kfree((void*)pagetable);
+}
+
+// freewalk for ukvm.
+void 
+freewalk_ukvm(pagetable_t kp, int level){
+  if(level == 3) return;
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kp[i];
+    if(pte & PTE_V){//* chanaged here
+      uint64 child = PTE2PA(pte);
+      freewalk_ukvm((pagetable_t)child, level + 1);
+      kp[i] = 0;
+      //kp[i] &= (~PTE_V);
+    }
+  }
+  kfree((void*)kp);
 }
 
 // Free user memory pages,
