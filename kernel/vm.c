@@ -393,6 +393,56 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+// async uvm and ukvm
+// impl: copy page from uvm pgtbl to ukvm pgtbl
+// use case:
+//   newsz=0 => del up
+//   odlsz=0 => new kp
+int
+vmcopy(pagetable_t up, pagetable_t kp, uint64 oldsz, uint64 newsz)
+{
+  uint64 i,pa;
+  uint flags;
+  pte_t *pte=0;
+  if(oldsz < newsz)
+  {
+    oldsz = PGROUNDUP(oldsz);
+    for(i=oldsz; i<newsz; i+=PGSIZE)
+    {
+      if((pte=walk(up, i, 0)) == 0)
+        panic("vmcopy: extended pte no found in uvm.");
+      
+      if((*pte & PTE_V) == 0)
+        panic("vmcopy: extended pte not present.");
+      
+      pa = PTE2PA(*pte);
+      flags = PTE_FLAGS(*pte);
+
+      //clear the user flag when converting to kvm page.
+      flags &= (~PTE_U);
+      
+      if((pte=walk(kp, i, 1)) == 0)
+        panic("vmcopy: extended pte no found in kvm.");
+      *pte = PA2PTE(pa) | flags;//concat
+    }
+  }  else  
+  {
+    newsz = PGROUNDUP(newsz);
+    for(i=newsz; i<oldsz; i+=PGSIZE)
+    {
+      if((pte=walk(kp, i, 0))  == 0)
+        panic("vmcopy: extended pte no found in kvm.");
+      if((*pte & PTE_V) == 0)
+        panic("vmcopy: extended pte not present.");
+      
+      //delete pte
+      *pte = 0;
+    }
+  }
+  return 0;
+}
+
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
@@ -435,7 +485,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int
-copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+copyin_old(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
 
@@ -456,12 +506,21 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   return 0;
 }
 
+// ukvm-based accelerated copyin
+// less address-translation logic
+// todo
+int
+copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+ return copyin_new(pagetable, dst, srcva, len);
+}
+
 // Copy a null-terminated string from user to kernel.
 // Copy bytes to dst from virtual address srcva in a given page table,
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
 int
-copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+copyinstr_old(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
   uint64 n, va0, pa0;
   int got_null = 0;
@@ -497,6 +556,14 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// ukvm-based accelerated copyinstr
+// less address-translation logic
+int
+copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+{
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 // check if use global kpgtbl or not 
